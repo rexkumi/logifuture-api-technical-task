@@ -1,25 +1,27 @@
-// ***********************************************
-// This example commands.js shows you how to
-// create various custom commands and overwrite
-// existing commands.
-//
-// For more comprehensive examples of custom
-// commands please read more here:
-// https://on.cypress.io/custom-commands
-// ***********************************************
-//
-//
-// -- This is a parent command --
-// Cypress.Commands.add('login', (email, password) => { ... })
-//
-//
-// -- This is a child command --
-// Cypress.Commands.add('drag', { prevSubject: 'element'}, (subject, options) => { ... })
-//
-//
-// -- This is a dual command --
-// Cypress.Commands.add('dismiss', { prevSubject: 'optional'}, (subject, options) => { ... })
-//
-//
-// -- This will overwrite an existing command --
-// Cypress.Commands.overwrite('visit', (originalFn, url, options) => { ... })
+Cypress.Commands.add('login', () => {
+  return cy.request({
+    method: 'POST',
+    url: '/user/login',
+    headers: { 'X-Service-Id': Cypress.env('serviceId') },
+    body: {
+      username: Cypress.env('username'),
+      password: Cypress.env('password'),
+    },
+  }).then((res) => {
+    Cypress.env('token', res.body.token);
+    Cypress.env('userId', res.body.userId);
+    return res.body;
+  });
+});
+
+Cypress.Commands.add('getWalletId', () => {
+  const userId = Cypress.env('userId');
+
+  return cy.request({
+    method: 'GET',
+    url: `/user/info/${userId}`,
+    headers: { Authorization: `Bearer ${Cypress.env('token')}` },
+  }).then((res) => {
+    return res.body.walletId;
+  });
+});
