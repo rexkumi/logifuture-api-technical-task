@@ -1,160 +1,153 @@
-const walletService = require('../../services/wallet.service');
-const walletApi = require('../../api/wallet.api');
-const { generateTransaction } = require('../../utils/dataFactory');
+const walletService = require('../../service/wallet.service.js');
+const { generateTransaction, generateInvalidTransaction } = require('../../utils/dataFactory');
+const { resetWallet } = require('../../support/helpers/resetWallet');
+const { seedWalletWithClips } = require('../../support/helpers/seedWallet');
 
-describe('Wallet Transactions API – Full Coverage Suite', () => {
+describe('Wallet Transactions API', () => {
   let walletId;
 
-  before(() => {
-  cy.login().then(() => {
+  beforeEach(() => {
+    cy.login();
+
     cy.getWalletId().then((id) => {
       walletId = id;
+      return resetWallet(walletId);
     });
   });
-});
 
-  // ---------------------------------------------------------
-  // P1 — CORE BUSINESS LOGIC
-  // ---------------------------------------------------------
-
-  it('P1: First-time credit creates a new currency clip', () => {
+  it('Creates a new currency clip on first credit', () => {
     const data = generateTransaction({ type: 'credit', currency: 'EUR' });
 
-    walletService.createTransaction(walletId, data).then((res) => {
-      expect(res.status).to.eq(200);
-      expect(res.body.transactionId).to.exist;
-    });
-
-    walletApi.getWallet(walletId).then((res) => {
-      const eur = res.body.currencyClips.find((c) => c.currency === 'EUR');
-      expect(eur).to.exist;
-      expect(eur.balance).to.be.greaterThan(0);
-    });
-  });
-
-  it('P1: Credit increases balance correctly', () => {
-    walletApi.getWallet(walletId).then((initial) => {
-      const before = initial.body.currencyClips.find((c) => c.currency === 'EUR').balance;
-
-      const data = generateTransaction({ type: 'credit', currency: 'EUR' });
-      walletService.createTransaction(walletId, data);
-
-      walletApi.getWallet(walletId).then((updated) => {
-        const after = updated.body.currencyClips.find((c) => c.currency === 'EUR').balance;
-        expect(after).to.be.greaterThan(before);
-      });
-    });
-  });
-
-  it('P1: Debit reduces balance correctly', () => {
-    const data = generateTransaction({ type: 'debit', currency: 'EUR', amount: 5 });
-
-    walletService.createTransaction(walletId, data).then((res) => {
-      expect([200, 400]).to.include(res.status);
-    });
-
-    walletApi.getWallet(walletId).then((res) => {
-      const eur = res.body.currencyClips.find((c) => c.currency === 'EUR');
-      expect(eur.balance).to.be.greaterThan(0);
-    });
-  });
-
-  it('P1: Debit fails when insufficient funds', () => {
-    const data = { currency: 'EUR', amount: 999999, type: 'debit' };
-
-    walletService.createTransaction(walletId, data).then((res) => {
-      expect(res.status).to.be.oneOf([400, 409]);
-      expect(res.body.outcome).to.eq('denied');
-    });
-  });
-
-  it('P1: Pending → Finished transaction flow', () => {
-    const data = generateTransaction({ type: 'credit', currency: 'USD' });
-
-    walletService.createTransaction(walletId, data).then((res) => {
-      const txId = res.body.transactionId;
-
-      if (res.body.status === 'pending') {
-        walletService.waitForTransaction(walletId, txId).then((finalRes) => {
-          expect(finalRes.body.status).to.eq('finished');
-          expect(['approved', 'denied']).to.include(finalRes.body.outcome);
-        });
-      } else {
-        expect(res.body.status).to.eq('finished');
+    walletService.createTransaction(walletId, data).then((response) => {
+      expect(response.status).to.eq(200);
+      expect(response.body.transactionId).to.exist;
+      if (response.body.status === 'finished') {
+        expect(response.body.outcome).to.eq('approved');
       }
     });
+
+    walletService.getWallet(walletId).then((response) => {
+      const eurCurrencyClip = response.body.currencyClips.find((c) => c.currency === 'EUR');
+      const ts = new Date(eurCurrencyClip.lastTransaction).getTime();
+      const now = Date.now();
+
+      expect(eurCurrencyClip).to.exist;
+      expect(eurCurrencyClip.balance).to.be.greaterThan(0);
+      expect(eurCurrencyClip.transactionCount).to.eq(1);
+      // Assuming the transaction was processed within the last 5 seconds
+      expect(now - ts).to.be.lessThan(5000);
+    });
   });
 
-  it('P1: Transaction detail retrieval returns correct data', () => {
-    const data = generateTransaction({ type: 'credit' });
+  it('Accurately increases credited currency balance and leaves uncredited currencies unchanged', () => {
+    seedWalletWithClips(walletId).then(() => {
+      walletService.getWallet(walletId).then((initial) => {
+        const clipsBefore = initial.body.currencyClips;
 
-    walletService.createTransaction(walletId, data).then((res) => {
-      const txId = res.body.transactionId;
+        const eurBefore = clipsBefore.find((c) => c.currency === 'EUR').balance;
+        const usdBefore = clipsBefore.find((c) => c.currency === 'USD').balance;
+        const gbpBefore = clipsBefore.find((c) => c.currency === 'GBP').balance;
 
-      walletApi.getTransaction(walletId, txId).then((txRes) => {
-        expect(txRes.status).to.eq(200);
-        expect(txRes.body.transactionId).to.eq(txId);
+        const amount = 25.5;
+
+        const data = generateTransaction({
+          type: 'credit',
+          currency: 'EUR',
+          amount,
+        });
+
+        walletService.createTransaction(walletId, data).then(() => {
+          walletService.getWallet(walletId).then((updated) => {
+            const clipsAfter = updated.body.currencyClips;
+
+            const eurAfter = clipsAfter.find((c) => c.currency === 'EUR').balance;
+            const usdAfter = clipsAfter.find((c) => c.currency === 'USD').balance;
+            const gbpAfter = clipsAfter.find((c) => c.currency === 'GBP').balance;
+
+            expect(eurAfter).to.equal(eurBefore + amount);
+
+            expect(usdAfter).to.equal(usdBefore);
+            expect(gbpAfter).to.equal(gbpBefore);
+          });
+        });
       });
     });
   });
 
-  // ---------------------------------------------------------
-  // P2 — VALIDATION & INPUT ROBUSTNESS
-  // ---------------------------------------------------------
+  it('Returns denied outcome when the debitted amount exceeds the available balance', () => {
+    seedWalletWithClips(walletId).then(() => {
+      walletService.getWallet(walletId).then((initial) => {
+        const clipsBefore = initial.body.currencyClips;
 
-  it('P2: Invalid currency code returns validation error', () => {
-    const data = generateTransaction({ currency: 'INVALID' });
+        const eurBefore = clipsBefore.find((c) => c.currency === 'EUR').balance;
 
-    walletService.createTransaction(walletId, data).then((res) => {
-      expect(res.status).to.be.oneOf([400, 422]);
+        const data = { currency: 'EUR', amount: 999999, type: 'debit' };
+
+        walletService.createTransaction(walletId, data).then((response) => {
+          expect(response.status).to.eq(200);
+          expect(response.body.outcome).to.eq('denied');
+
+          walletService.getWallet(walletId).then((updated) => {
+            const clipsAfter = updated.body.currencyClips;
+
+            const eurAfter = clipsAfter.find((c) => c.currency === 'EUR').balance;
+
+            expect(eurAfter).to.equal(eurBefore);
+          });
+        });
+      });
     });
   });
 
-  it('P2: Negative amount returns validation error', () => {
-    const data = generateTransaction({ amount: -50 });
+  it('Returns 400 when the transaction payload is invalid', () => {
+    const data = generateInvalidTransaction();
 
-    walletService.createTransaction(walletId, data).then((res) => {
-      expect(res.status).to.be.oneOf([400, 422]);
+    walletService.createTransaction(walletId, data).then((response) => {
+      expect(response.status).to.eq(400);
     });
   });
 
-  it('P2: Invalid transaction type returns validation error', () => {
-    const data = generateTransaction({ type: 'refund' });
+  it('Returns 400 when attempting multiple credits in a single request', () => {
+    const invalidPayload = {
+      transactions: [
+        { currency: 'EUR', amount: 50, type: 'credit' },
+        { currency: 'USD', amount: 100, type: 'credit' },
+      ],
+    };
 
-    walletService.createTransaction(walletId, data).then((res) => {
-      expect(res.status).to.be.oneOf([400, 422]);
+    walletService.createTransaction(walletId, invalidPayload).then((response) => {
+      expect(response.status).to.eq(400);
+      expect(response.body.message).to.exist;
     });
   });
 
-  it('P2: Missing required fields returns validation error', () => {
-    walletService.createTransaction(walletId, {}).then((res) => {
-      expect(res.status).to.be.oneOf([400, 422]);
-    });
-  });
+  it('Returns denied outcome when attempting to withdraw from a currency the users wallet does not hold', () => {
+    seedWalletWithClips(walletId).then(() => {
+      walletService.getWallet(walletId).then((initial) => {
+        const clipsBefore = initial.body.currencyClips;
 
-  // ---------------------------------------------------------
-  // P3 — BROADER BEHAVIOR & EDGE CASES
-  // ---------------------------------------------------------
+        const eurBefore = clipsBefore.find((c) => c.currency === 'EUR').balance;
+        const usdBefore = clipsBefore.find((c) => c.currency === 'USD').balance;
+        const gbpBefore = clipsBefore.find((c) => c.currency === 'GBP').balance;
 
-  it('P3: Multi-currency wallet support', () => {
-    const tx1 = generateTransaction({ type: 'credit', currency: 'EUR' });
-    const tx2 = generateTransaction({ type: 'credit', currency: 'USD' });
+        const data = { currency: 'JPY', amount: 10, type: 'debit' };
 
-    walletService.createTransaction(walletId, tx1);
-    walletService.createTransaction(walletId, tx2);
+        walletService.createTransaction(walletId, data).then((response) => {
+          expect(response.status).to.eq(200);
+          expect(response.body.outcome).to.eq('denied');
 
-    walletApi.getWallet(walletId).then((res) => {
-      const currencies = res.body.currencyClips.map((c) => c.currency);
-      expect(currencies).to.include('EUR');
-      expect(currencies).to.include('USD');
-    });
-  });
+          walletService.getWallet(walletId).then((updated) => {
+            const clipsAfter = updated.body.currencyClips;
 
-  it('P3: Invalid walletId returns error', () => {
-    const data = generateTransaction();
+            const jpyClip = clipsAfter.find((c) => c.currency === 'JPY');
+            expect(jpyClip).to.not.exist;
 
-    walletService.createTransaction('00000000-0000-0000-0000-000000000000', data).then((res) => {
-      expect(res.status).to.be.oneOf([401, 404]);
+            expect(clipsAfter.find((c) => c.currency === 'EUR').balance).to.equal(eurBefore);
+            expect(clipsAfter.find((c) => c.currency === 'USD').balance).to.equal(usdBefore);
+            expect(clipsAfter.find((c) => c.currency === 'GBP').balance).to.equal(gbpBefore);
+          });
+        });
+      });
     });
   });
 });

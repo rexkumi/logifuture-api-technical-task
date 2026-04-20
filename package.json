@@ -1,17 +1,25 @@
 {
   "name": "logifuture-api-technical-task",
   "version": "1.0.0",
-  "description": "",
+  "description": "API automation framework for Logifuture wallet transactions using Cypress",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "headless": "cypress run",
+    "interactive": "cypress open"
   },
-  "keywords": [],
+  "keywords": [
+    "cypress",
+    "api-testing",
+    "logifuture",
+    "wallet"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
     "currency-codes": "^2.2.0",
-    "cypress": "^15.14.0"
+    "cypress": "^15.14.0",
+    "mochawesome": "^7.1.4",
+    "prettier": "^3.8.3"
   }
 }

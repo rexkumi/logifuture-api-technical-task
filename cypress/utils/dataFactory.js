@@ -1,7 +1,7 @@
 const currencyCodes = require('currency-codes');
 
-function generateTransaction(overrides = {}) {
-  const allCurrencies = currencyCodes.codes(); // returns ["USD", "EUR", "GBP", ...]
+const generateTransaction = (overrides = {}) => {
+  const allCurrencies = currencyCodes.codes();
   const currency = allCurrencies[Math.floor(Math.random() * allCurrencies.length)];
 
   return {
@@ -10,6 +10,13 @@ function generateTransaction(overrides = {}) {
     type: 'credit',
     ...overrides,
   };
-}
+};
 
-module.exports = { generateTransaction };
+const generateInvalidTransaction = (overrides = {}) => ({
+  currency: 'INVALID',
+  amount: -100,
+  type: 'invalid_type',
+  ...overrides,
+});
+
+module.exports = { generateTransaction, generateInvalidTransaction };

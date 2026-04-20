@@ -22,10 +22,10 @@ class WalletApi {
     });
   }
 
-  getTransaction(walletId, txId) {
+  getTransaction(walletId, transactionId) {
     return cy.request({
       method: 'GET',
-      url: `/wallet/${walletId}/transaction/${txId}`,
+      url: `/wallet/${walletId}/transaction/${transactionId}`,
       headers: {
         Authorization: `Bearer ${Cypress.env('token')}`,
       },
