@@ -11,6 +11,7 @@ module.exports = defineConfig({
 
   e2e: {
     baseUrl: process.env.API_BASE_URL || 'http://localhost:3000',
+    specPattern: 'cypress/e2e/**/*.cy.js',
     retries: {
       runMode: 1,
       openMode: 0,
